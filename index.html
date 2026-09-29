@@ -504,14 +504,14 @@ function showSetup(message) {
       e.preventDefault();
       const k = $("#key").value.trim();
       if (!k) return;
-      store.set("rh-key", k); store.del("rh-verifier"); showSetup();
+      store.set("rh-key", k); showSetup();
     };
     return;
   }
   $("#main").innerHTML = `
     <div class="card">
       <h2>Step 2 of 2: connect Dropbox</h2>
-      ${message ? `<p>${esc(message)}</p>` : ""}
+      ${message ? `<p style="color:var(--accent);font-weight:600">${esc(message)}</p>` : ""}
       <ol>
         <li>Tap <b>Open Dropbox</b> and allow access.</li>
         <li>Dropbox shows a code. Copy it.</li>
@@ -532,10 +532,17 @@ function showSetup(message) {
     const code = $("#code").value;
     if (!code.trim()) return;
     try { await finishConnect(code); location.hash = "#/"; route(); }
-    catch (err) { toast(err.message + " Tap Open Dropbox to get a fresh code."); store.del("rh-verifier"); showSetup(); }
+    catch (err) {
+      // Keep the same verifier, so any code from this app's "Open Dropbox" link still works.
+      const why = /verifier|expired|doesn't exist|does not exist|invalid_grant/i.test(err.message)
+        ? "That code didn't work (it may be from an older Dropbox page, or already used)."
+        : /client|app key|invalid_client/i.test(err.message) ? "Dropbox didn't accept the app key. Check it via “Use a different app key” below."
+        : err.message === "Failed to fetch" ? "Couldn't reach Dropbox. Check your connection." : err.message;
+      showSetup(why + " Tap Open Dropbox again, then paste the new code it shows.");
+    }
   };
   const rk = $("#rekey");
-  if (rk) rk.onclick = () => { store.del("rh-key"); store.del("rh-verifier"); showSetup(); };
+  if (rk) rk.onclick = () => { store.del("rh-key"); showSetup(); };
 }
 
 // ---------- taps ----------
