@@ -124,6 +124,7 @@ const APP_KEY = "";            // optional: your Dropbox app key (otherwise the 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const byName = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" }).compare;  // "10." after "9."
+const newestFirst = (a, b) => (b.ts || b.modified).localeCompare(a.ts || a.modified) || byName(a.name, b.name);
 const today = () => new Date().toLocaleDateString("en-CA");  // YYYY-MM-DD, local time
 const store = {
   get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
@@ -273,8 +274,11 @@ async function listReports(dir) {
   try { entries = await listFolder(dir); } catch (e) { if (notFound(e)) return []; throw e; }
   return entries
     .filter(e => e[".tag"] === "file" && !e.name.startsWith("."))
-    .map(e => ({ name: e.name, path: e.path_lower, modified: (e.client_modified || e.server_modified || "").slice(0, 10) }))
-    .sort((a, b) => b.modified.localeCompare(a.modified) || byName(a.name, b.name));
+    .map(e => {
+      const ts = e.client_modified || e.server_modified || "";  // exact save time, like the Mac tracker uses
+      return { name: e.name, path: e.path_lower, ts, modified: ts.slice(0, 10) };
+    })
+    .sort(newestFirst);
 }
 
 async function loadHome() {
@@ -299,7 +303,7 @@ async function loadProject(name) {
 async function loadRecent() {
   const home = state.home || await loadHome();
   const per = await pool(home, 4, async p => (await listReports(await reportsDirOf(p.name))).map(r => ({ ...r, project: p.name })));
-  return per.flat().sort((a, b) => b.modified.localeCompare(a.modified) || byName(a.name, b.name));
+  return per.flat().sort(newestFirst);
 }
 
 // ---------- app state + routing ----------
