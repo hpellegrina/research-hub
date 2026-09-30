@@ -105,6 +105,19 @@ details[open] summary::before { transform: rotate(90deg); }
 .foot { margin-top: 36px; text-align: center; }
 .link-btn { border: 0; background: none; color: var(--muted); text-decoration: underline; cursor: pointer; font-size: .88rem; padding: 8px; }
 
+.report { display: flex; align-items: center; }
+.report .row { flex: 1; width: auto; min-width: 0; padding-right: 6px; }
+.is-unread .rname { font-weight: 600; }
+.is-read .rname { color: var(--muted); }
+.readbtn { flex: none; margin-right: 10px; min-height: 36px; padding: 6px 11px; border-radius: 99px; cursor: pointer; font-size: .82rem; font-weight: 600; white-space: nowrap; border: 1px solid var(--accent); background: none; color: var(--accent); }
+.readbtn[aria-pressed="true"] { border-color: transparent; background: none; color: var(--done); font-weight: 500; }
+.unread-count { color: var(--accent); font-weight: 600; }
+.section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.section-head .link-btn { color: var(--accent); padding: 8px 0; }
+.seg button { flex: 1; padding: 6px 0; border: 0; border-radius: 7px; background: none; cursor: pointer; font-weight: 500; font-size: .92rem; }
+.seg button[aria-pressed="true"] { background: var(--sheet); box-shadow: 0 1px 2px rgba(0,0,0,.12); font-weight: 600; }
+.small-seg { margin: 10px 0 12px; }
+
 .toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom)); transform: translateX(-50%); width: max-content; max-width: calc(100% - 32px); background: var(--ink); color: var(--paper); padding: 10px 16px; border-radius: 10px; font-size: .92rem; z-index: 10; }
 .toast[hidden] { display: none; }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
@@ -124,7 +137,8 @@ const APP_KEY = "";            // optional: your Dropbox app key (otherwise the 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const byName = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" }).compare;  // "10." after "9."
-const newestFirst = (a, b) => (b.ts || b.modified).localeCompare(a.ts || a.modified) || byName(a.name, b.name);
+// Newest first; files saved in the same second go by name, reversed (names start with dates). Same rule as tracker.py.
+const newestFirst = (a, b) => (b.ts || b.modified).localeCompare(a.ts || a.modified) || byName(b.name, a.name);
 const today = () => new Date().toLocaleDateString("en-CA");  // YYYY-MM-DD, local time
 const store = {
   get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
@@ -192,14 +206,14 @@ async function accessToken() {
 function signOut() {
   const t = store.get("rh-access");
   if (t) fetch("https://api.dropboxapi.com/2/auth/token/revoke", { method: "POST", headers: { Authorization: `Bearer ${t}` } }).catch(() => {});
-  ["rh-access", "rh-expires", "rh-refresh", "rh-verifier", "rh-cache", "rh-recent"].forEach(store.del);
+  ["rh-access", "rh-expires", "rh-refresh", "rh-verifier", "rh-all", "rh-cache", "rh-recent"].forEach(store.del);
   try { Object.keys(localStorage).filter(k => k.startsWith("rh-p:")).forEach(store.del); } catch (e) {}
-  state.home = state.recent = state.project = null;
+  state.projects = state.project = null;
 }
 
 // ---------- Dropbox files API ----------
 // Header values must be ASCII, so escape accents etc. in paths.
-const headerJson = (o) => JSON.stringify(o).replace(/[\u007f-￿]/g, c => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0"));
+const headerJson = (o) => JSON.stringify(o).replace(/[\u007f-\uffff]/g, c => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0"));
 
 async function dbx(url, opts = {}, retry = true) {
   const r = await fetch(url, { method: "POST", ...opts, headers: { ...opts.headers, Authorization: `Bearer ${await accessToken()}` } });
@@ -241,6 +255,7 @@ async function upload(path, text, rev) {
 // ---------- research hub files (same format as tracker.py) ----------
 const TASK_RE = /^\s*[-*]\s*\[( |x|X)\]\s*(.*?)\s*$/;
 const DONE_RE = /\s+\(done (\d{4}-\d{2}-\d{2})\)$/;
+const READ_FILE = "READ_REPORTS.txt";  // per project: names of reports marked as read, one per line
 const projectPath = (name) => `${HUB}/projects/${name}`;
 
 function parseTasks(text) {
@@ -262,10 +277,22 @@ function serializeTasks(name, tasks) {
   return lines.join("\n") + "\n";
 }
 
+const parseRead = (text) => text.split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith("#"));
+
+function serializeRead(p) {
+  // Only keep reports that still exist, so the file doesn't grow forever.
+  const names = p.reports.filter(r => p.read.includes(r.name)).map(r => r.name);
+  return ["# Reports marked as read in the Research Hub app (one file name per line).", ...names].join("\n") + "\n";
+}
+
+const isRead = (p, r) => p.read.includes(r.name);
+const openCount = (p) => p.tasks.filter(t => !t.done).length;
+const unreadCount = (p) => p.reports.filter(r => !isRead(p, r)).length;
+
 async function reportsDirOf(name, entries) {
   // REPORTS.txt (first line = folder inside Dropbox) wins; otherwise the project's own "reports" folder.
-  const has = entries ? entries.some(e => e.name === "REPORTS.txt") : true;
-  const pointer = has ? (await downloadOr(`${projectPath(name)}/REPORTS.txt`, "")).trim().split(/\r?\n/)[0].trim() : "";
+  const pointer = entries.some(e => e.name === "REPORTS.txt")
+    ? (await downloadOr(`${projectPath(name)}/REPORTS.txt`, "")).trim().split(/\r?\n/)[0].trim() : "";
   return pointer ? "/" + pointer.replace(/^\/+/, "") : `${projectPath(name)}/reports`;
 }
 
@@ -281,40 +308,50 @@ async function listReports(dir) {
     .sort(newestFirst);
 }
 
-async function loadHome() {
+async function loadProject(name) {
+  const entries = await listFolder(projectPath(name));
+  const file = (n) => entries.find(e => e[".tag"] === "file" && e.name === n);
+  const tasksFile = file("TASKS.md"), readFile = file(READ_FILE);
+  const [text, readText, reports] = await Promise.all([
+    tasksFile ? download(tasksFile.path_lower) : "",
+    readFile ? download(readFile.path_lower) : "",
+    reportsDirOf(name, entries).then(listReports),
+  ]);
+  return {
+    name, reports,
+    tasks: parseTasks(text), rev: tasksFile ? tasksFile.rev : null,
+    read: parseRead(readText), readRev: readFile ? readFile.rev : null,
+  };
+}
+
+async function loadAll() {
   let entries;
   try { entries = await listFolder(`${HUB}/projects`); }
   catch (e) { if (notFound(e)) throw new Error(`Couldn't find ${HUB}/projects in your Dropbox.`); throw e; }
   const names = entries.filter(e => e[".tag"] === "folder" && !e.name.startsWith(".")).map(e => e.name).sort(byName);
-  const open = await pool(names, 6, async n => parseTasks(await downloadOr(`${projectPath(n)}/TASKS.md`, "")).filter(t => !t.done).length);
-  return names.map((name, i) => ({ name, open: open[i] }));
-}
-
-async function loadProject(name) {
-  const entries = await listFolder(projectPath(name));
-  const file = entries.find(e => e[".tag"] === "file" && e.name === "TASKS.md");
-  const [text, reports] = await Promise.all([
-    file ? download(file.path_lower) : "",
-    reportsDirOf(name, entries).then(listReports),
-  ]);
-  return { name, tasks: parseTasks(text), rev: file ? file.rev : null, reports };
-}
-
-async function loadRecent() {
-  const home = state.home || await loadHome();
-  const per = await pool(home, 4, async p => (await listReports(await reportsDirOf(p.name))).map(r => ({ ...r, project: p.name })));
-  return per.flat().sort(newestFirst);
+  return pool(names, 6, loadProject);
 }
 
 // ---------- app state + routing ----------
+// Everything last loaded is kept on the phone, so the app opens instantly and then refreshes.
+const cached = store.json("rh-all");
 const state = {
-  home: store.json("rh-cache"),   // last known project list, so the app opens instantly
+  projects: Array.isArray(cached) ? cached.map(p => ({ ...p, fromCache: true })) : null,
   project: null,
-  recent: null,
   filter: "",
+  unreadOnly: false,
   busy: 0,
 };
 let saving = Promise.resolve();
+
+const saveCache = () => store.set("rh-all", JSON.stringify(state.projects || []));
+const findProject = (name) => (state.projects || []).find(p => p.name === name);
+function putProject(p) {
+  if (!state.projects) state.projects = [];
+  const i = state.projects.findIndex(x => x.name === p.name);
+  if (i >= 0) state.projects[i] = p; else state.projects.push(p), state.projects.sort((a, b) => byName(a.name, b.name));
+  saveCache();
+}
 
 function route() {
   const h = location.hash;
@@ -350,26 +387,36 @@ function header({ title, back, tabs }) {
   $("#refresh").onclick = () => route();
 }
 
+function refreshAll(view, render) {
+  busy(async () => {
+    state.projects = await loadAll();
+    saveCache();
+    if (currentView() === view) render(true);
+  });
+}
+const currentView = () => location.hash.startsWith("#/p/") ? "project" : location.hash === "#/recent" ? "recent" : "home";
+
 // ---------- views ----------
 function showHome() {
   document.title = "Research Hub";
   header({ title: "Research Hub", tabs: "home" });
   renderHome();
-  busy(async () => {
-    state.home = await loadHome();
-    store.set("rh-cache", JSON.stringify(state.home));
-    if (location.hash === "" || location.hash === "#/") renderHome();
-  });
+  refreshAll("home", renderHome);
 }
 
 function renderHome() {
-  const home = state.home;
-  $("#main").innerHTML = !home ? `<p class="empty">Loading your projects…</p>`
-    : !home.length ? `<p class="empty">No projects yet. Make a folder for each project in <b>research_hub/projects</b>.</p>`
-    : `<ul class="list">${home.map(p => `
+  const all = state.projects;
+  const summary = (p) => {
+    const open = openCount(p), unread = unreadCount(p);
+    const tasks = open ? `${open} to do` : "no tasks";
+    const reports = unread ? `<b class="unread-count">${unread} unread</b>` : p.reports.length ? "all read" : "no reports";
+    return `${tasks} · ${reports}`;
+  };
+  $("#main").innerHTML = !all ? `<p class="empty">Loading your projects…</p>`
+    : !all.length ? `<p class="empty">No projects yet. Make a folder for each project in <b>research_hub/projects</b>.</p>`
+    : `<ul class="list">${all.map(p => `
         <li><a class="row" href="#/p/${encodeURIComponent(p.name)}">
-          <span class="grow">${esc(p.name)}</span>
-          ${p.open ? `<span class="badge" aria-label="${p.open} to do">${p.open}</span>` : ""}
+          <span class="grow">${esc(p.name)}<span class="sub">${summary(p)}</span></span>
           <span class="chev">${ICONS.chev}</span>
         </a></li>`).join("")}</ul>
       <div class="foot"><button class="link-btn" id="signout">Disconnect Dropbox</button></div>`;
@@ -380,14 +427,13 @@ function renderHome() {
 function showProject(name) {
   document.title = name;
   header({ title: name, back: true });
-  const cached = store.json("rh-p:" + name);
-  state.project = cached ? { ...cached, stale: true } : null;
+  state.project = findProject(name) || null;
   renderProject(name);
   busy(async () => {
     const p = await loadProject(name);
+    putProject(p);
     if (location.hash !== "#/p/" + encodeURIComponent(name)) return;
     state.project = p;
-    store.set("rh-p:" + name, JSON.stringify(p));
     renderProject(name);
   });
 }
@@ -398,6 +444,7 @@ function renderProject(name) {
   const tasks = p.tasks.map((t, i) => ({ ...t, i }));
   const open = tasks.filter(t => !t.done);
   const done = tasks.filter(t => t.done).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  const unread = unreadCount(p);
   const row = t => `
     <li class="task ${t.done ? "done" : ""}">
       <button class="check" data-act="toggle" data-i="${t.i}" aria-label="${t.done ? "Mark as not done" : "Mark as done"}: ${esc(t.text)}"></button>
@@ -407,7 +454,7 @@ function renderProject(name) {
     </li>`;
 
   $("#main").innerHTML = `
-    <p class="muted small" style="margin:0 0 12px">${open.length} to do, ${done.length} completed, ${p.reports.length} ${p.reports.length === 1 ? "report" : "reports"}</p>
+    <p class="muted small" style="margin:0 0 12px">${open.length} to do, ${done.length} completed · ${p.reports.length} ${p.reports.length === 1 ? "report" : "reports"}, ${unread} unread</p>
     <form class="add" id="add">
       <input class="field" id="newtask" placeholder="Add a task" autocomplete="off" enterkeyhint="done" aria-label="New task">
       <button class="btn" type="submit">Add</button>
@@ -419,75 +466,112 @@ function renderProject(name) {
       <summary><h3>Completed (${done.length})</h3></summary>
       <ul class="list">${done.map(row).join("")}</ul>
     </details>
-    <h3>Reports</h3>
+    <div class="section-head">
+      <h3>Reports</h3>
+      ${unread ? `<button class="link-btn" data-allread>Mark all as read</button>` : ""}
+    </div>
     ${p.reports.length ? "" : `<p class="empty">No reports yet.</p>`}
-    <ul class="list">${p.reports.map(reportRow).join("")}</ul>`;
+    <ul class="list">${p.reports.map(r => reportRow(p, r)).join("")}</ul>`;
 
   $("#add").onsubmit = (e) => {
     e.preventDefault();
     const text = $("#newtask").value.split(/\s+/).filter(Boolean).join(" ");
     if (!text) return;
-    change(tasks => tasks.push({ text, done: false, date: null }));
+    changeTasks(p, tasks => tasks.push({ text, done: false, date: null }));
     $("#newtask").focus();
   };
 }
 
-function reportRow(r, showProject) {
+function reportRow(p, r, showProject) {
   const ext = (r.name.split(".").pop() || "").slice(0, 4).toUpperCase();
-  return `<li><button class="row" data-open="${esc(r.path)}">
-    <span class="pdf" aria-hidden="true">${esc(ext)}</span>
-    <span class="grow">${esc(r.name)}<span class="sub">${showProject === true ? esc(r.project) + " · " : ""}${r.modified}</span></span>
-  </button></li>`;
+  const read = isRead(p, r);
+  return `<li class="report ${read ? "is-read" : "is-unread"}">
+    <button class="row" data-open="${esc(r.path)}">
+      <span class="pdf" aria-hidden="true">${esc(ext)}</span>
+      <span class="grow"><span class="rname">${esc(r.name)}</span><span class="sub">${showProject ? esc(p.name) + " · " : ""}${r.modified}</span></span>
+    </button>
+    <button class="readbtn" data-read="${esc(p.name)}" data-name="${esc(r.name)}" aria-pressed="${read}"
+      aria-label="${read ? "Read. Tap to mark as unread" : "Unread. Tap to mark as read"}: ${esc(r.name)}">${read ? "✓ Read" : "Mark read"}</button>
+  </li>`;
 }
 
-// Apply a change to the open project's tasks right away, then save it to Dropbox in order.
-function change(mutate) {
-  const p = state.project;
-  if (!p || p.stale) return toast("Still loading, try again in a second.");
-  mutate(p.tasks);
-  renderProject(p.name);
-  const text = serializeTasks(p.name, p.tasks);
-  const home = state.home?.find(x => x.name === p.name);
-  if (home) { home.open = p.tasks.filter(t => !t.done).length; store.set("rh-cache", JSON.stringify(state.home)); }
+// Save a project file to Dropbox, in order. rev makes Dropbox refuse if it was changed elsewhere.
+function persist(p, fileName, text, revKey) {
+  saveCache();
   saving = saving.then(() => busy(async () => {
     if (p.failed) return;
     try {
-      const meta = await upload(`${projectPath(p.name)}/TASKS.md`, text, p.rev);
-      p.rev = meta.rev;
-      store.set("rh-p:" + p.name, JSON.stringify(p));
+      const meta = await upload(`${projectPath(p.name)}/${fileName}`, text, p[revKey]);
+      p[revKey] = meta.rev;
+      saveCache();
     } catch (e) {
       p.failed = true;
-      if (e.status === 409) toast("This list was changed on another device. Reloaded, please try again.");
-      else toast("Couldn't save: " + e.message);
-      if (state.project === p) showProject(p.name);
+      toast(e.status === 409 ? "This was changed on another device. Reloaded, please try again." : "Couldn't save: " + e.message);
+      route();
     }
   }));
+}
+
+const editable = (p) => {
+  if (p && !p.fromCache && !p.failed) return true;
+  toast("Still loading, try again in a second.");
+  return false;
+};
+
+function rerender() {
+  const v = currentView();
+  if (v === "project" && state.project) renderProject(state.project.name);
+  else if (v === "recent") renderRecent(true);
+  else renderHome();
+}
+
+function changeTasks(p, mutate) {
+  if (!editable(p)) return;
+  mutate(p.tasks);
+  rerender();
+  persist(p, "TASKS.md", serializeTasks(p.name, p.tasks), "rev");
+}
+
+function setRead(p, names, value) {
+  if (!editable(p)) return;
+  p.read = value ? [...new Set([...p.read, ...names])] : p.read.filter(n => !names.includes(n));
+  rerender();
+  persist(p, READ_FILE, serializeRead(p), "readRev");
 }
 
 function showRecent() {
   document.title = "Recent PDFs";
   header({ title: "Research Hub", tabs: "recent" });
-  if (!state.recent) state.recent = store.json("rh-recent");
   renderRecent();
-  busy(async () => {
-    state.recent = await loadRecent();
-    store.set("rh-recent", JSON.stringify(state.recent));
-    if (location.hash === "#/recent") renderRecent(true);
-  });
+  refreshAll("recent", renderRecent);
 }
 
-function renderRecent(keepFocus) {
-  const all = state.recent;
+function renderRecent(listOnly) {
+  const all = state.projects;
   const q = state.filter.toLowerCase();
-  const items = (all || []).filter(r => !q || r.name.toLowerCase().includes(q) || r.project.toLowerCase().includes(q));
+  const items = (all || [])
+    .flatMap(p => p.reports.map(r => ({ p, r })))
+    .filter(({ p, r }) => (!state.unreadOnly || !isRead(p, r)) && (!q || r.name.toLowerCase().includes(q) || p.name.toLowerCase().includes(q)))
+    .sort((a, b) => newestFirst(a.r, b.r));
+  const unreadTotal = (all || []).reduce((n, p) => n + unreadCount(p), 0);
   const list = `${!all ? `<p class="empty">Collecting reports from all projects…</p>`
-    : !items.length ? `<p class="empty">${q ? "No reports match." : "No reports yet."}</p>` : ""}
-    <ul class="list">${items.slice(0, 300).map(r => reportRow(r, true)).join("")}</ul>`;
-  if (keepFocus && $("#recent-list")) { $("#recent-list").innerHTML = list; return; }
+    : !items.length ? `<p class="empty">${q ? "No reports match." : state.unreadOnly ? "You've read everything." : "No reports yet."}</p>` : ""}
+    <ul class="list">${items.slice(0, 300).map(({ p, r }) => reportRow(p, r, true)).join("")}</ul>`;
+  if (listOnly && $("#recent-list")) {
+    $("#recent-list").innerHTML = list;
+    $("#unread-tab").textContent = `Unread (${unreadTotal})`;
+    return;
+  }
   $("#main").innerHTML = `
-    <input class="field" id="filter" type="search" placeholder="Search reports or projects" value="${esc(state.filter)}" aria-label="Search reports" style="width:100%;margin-bottom:12px">
+    <input class="field" id="filter" type="search" placeholder="Search reports or projects" value="${esc(state.filter)}" aria-label="Search reports" style="width:100%">
+    <div class="seg small-seg" role="group" aria-label="Which reports">
+      <button type="button" id="all-tab" aria-pressed="${!state.unreadOnly}">All</button>
+      <button type="button" id="unread-tab" aria-pressed="${state.unreadOnly}">Unread (${unreadTotal})</button>
+    </div>
     <div id="recent-list">${list}</div>`;
   $("#filter").oninput = (e) => { state.filter = e.target.value; renderRecent(true); };
+  $("#all-tab").onclick = () => { state.unreadOnly = false; renderRecent(); };
+  $("#unread-tab").onclick = () => { state.unreadOnly = true; renderRecent(); };
 }
 
 function showSetup(message) {
@@ -564,14 +648,27 @@ document.addEventListener("click", async (e) => {
     });
     return;
   }
+  const readBtn = e.target.closest("[data-read]");
+  if (readBtn) {
+    const p = findProject(readBtn.dataset.read);
+    const r = p && p.reports.find(x => x.name === readBtn.dataset.name);
+    if (r) setRead(p, [r.name], !isRead(p, r));
+    return;
+  }
+  if (e.target.closest("[data-allread]")) {
+    const p = state.project, unread = p ? p.reports.filter(r => !isRead(p, r)) : [];
+    if (unread.length && confirm(`Mark all ${unread.length} reports in ${p.name} as read?`)) setRead(p, unread.map(r => r.name), true);
+    return;
+  }
   const btn = e.target.closest("[data-act]");
-  if (!btn || !state.project) return;
-  const i = +btn.dataset.i, t = state.project.tasks[i];
+  const p = state.project;
+  if (!btn || !p) return;
+  const i = +btn.dataset.i, t = p.tasks[i];
   if (!t) return;
   if (btn.dataset.act === "delete") {
-    if (confirm(`Delete "${t.text}"?`)) change(tasks => tasks.splice(i, 1));
+    if (confirm(`Delete "${t.text}"?`)) changeTasks(p, tasks => tasks.splice(i, 1));
   } else {
-    change(tasks => { tasks[i].done = !tasks[i].done; tasks[i].date = tasks[i].done ? today() : null; });
+    changeTasks(p, tasks => { tasks[i].done = !tasks[i].done; tasks[i].date = tasks[i].done ? today() : null; });
   }
 });
 
