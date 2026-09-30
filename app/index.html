@@ -1,0 +1,736 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Research Hub">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#EEF1F4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#151B23" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<title>Research Hub</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,600&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --paper: #EEF1F4;
+  --sheet: #FFFFFF;
+  --ink: #18212C;
+  --muted: #5F6B78;
+  --rule: #D5DBE2;
+  --accent: #23508C;
+  --accent-soft: #DCE6F3;
+  --done: #4F7A5A;
+  --serif: "Newsreader", "Iowan Old Style", Georgia, serif;
+  --sans: "Public Sans", -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #151B23; --sheet: #1D2530; --ink: #E6EAF0; --muted: #98A3B0;
+    --rule: #2F3A47; --accent: #8FB3E8; --accent-soft: #263A55; --done: #8CBF98;
+  }
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; }
+body {
+  background: var(--paper); color: var(--ink); font: 17px/1.45 var(--sans);
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  min-height: 100vh;
+}
+button, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+a { color: var(--accent); }
+
+header { position: sticky; top: 0; z-index: 5; background: var(--paper); padding: 14px 16px 10px; border-bottom: 1px solid var(--rule); }
+.bar { display: flex; align-items: center; gap: 8px; min-height: 40px; }
+.bar h1 { flex: 1; min-width: 0; margin: 0; font: 600 1.45rem/1.2 var(--serif); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.icon-btn { flex: none; width: 40px; height: 40px; border: 0; border-radius: 10px; background: none; display: grid; place-items: center; cursor: pointer; color: var(--accent); padding: 0; }
+.icon-btn:active { background: var(--accent-soft); }
+.icon-btn svg { width: 22px; height: 22px; }
+.spin svg { animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.seg { display: flex; margin-top: 10px; background: var(--rule); border-radius: 9px; padding: 2px; }
+.seg a { flex: 1; text-align: center; padding: 7px 0; border-radius: 7px; text-decoration: none; color: var(--ink); font-weight: 500; font-size: .95rem; }
+.seg a[aria-current="page"] { background: var(--sheet); box-shadow: 0 1px 2px rgba(0,0,0,.12); font-weight: 600; }
+
+main { padding: 16px 16px 40px; max-width: 720px; margin: 0 auto; }
+.muted { color: var(--muted); }
+.small { font-size: .88rem; }
+h3 { font: 600 1.12rem/1.3 var(--serif); margin: 22px 0 8px; }
+
+.list { list-style: none; margin: 0; padding: 0; background: var(--sheet); border: 1px solid var(--rule); border-radius: 12px; overflow: hidden; }
+.list:empty { display: none; }
+.list > li { border-top: 1px solid var(--rule); }
+.list > li:first-child { border-top: 0; }
+.row { display: flex; align-items: center; gap: 12px; padding: 13px 14px; min-height: 52px; text-decoration: none; color: inherit; width: 100%; background: none; border: 0; text-align: left; cursor: pointer; }
+.row:active { background: var(--accent-soft); }
+.grow { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.badge { flex: none; min-width: 26px; padding: 1px 8px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); font-size: .85rem; font-weight: 600; text-align: center; font-variant-numeric: tabular-nums; }
+.chev { flex: none; color: var(--muted); }
+.sub { display: block; color: var(--muted); font-size: .85rem; margin-top: 2px; }
+.pdf { flex: none; width: 30px; height: 36px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); font-size: .6rem; font-weight: 700; display: grid; place-items: center; letter-spacing: .03em; }
+
+.task { display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; }
+.check { flex: none; width: 26px; height: 26px; margin-top: -1px; border: 2px solid var(--muted); border-radius: 50%; background: none; cursor: pointer; display: grid; place-items: center; padding: 0; }
+.done .check { background: var(--done); border-color: var(--done); }
+.done .check::after { content: ""; width: 6px; height: 12px; border: solid var(--sheet); border-width: 0 2px 2px 0; transform: translateY(-1px) rotate(45deg); }
+.done .grow { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--rule); }
+.date { color: var(--muted); font-size: .82rem; white-space: nowrap; margin-top: 2px; }
+.remove { flex: none; border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 1.3rem; line-height: 1; padding: 0 4px; opacity: .7; }
+
+.add { display: flex; gap: 8px; margin-top: 4px; }
+.field { flex: 1; min-width: 0; padding: 11px 13px; border: 1px solid var(--rule); border-radius: 10px; background: var(--sheet); font-size: 16px; }
+.btn { flex: none; padding: 11px 16px; border: 0; border-radius: 10px; background: var(--accent); color: var(--sheet); font-weight: 600; cursor: pointer; text-decoration: none; display: inline-block; text-align: center; }
+.btn.block { display: block; width: 100%; }
+.btn.ghost { background: none; color: var(--accent); border: 1px solid var(--rule); }
+
+details summary { cursor: pointer; list-style: none; }
+details summary::-webkit-details-marker { display: none; }
+details summary h3 { display: inline-block; }
+details summary::before { content: "▸"; color: var(--muted); display: inline-block; width: 1.1em; transition: transform .15s; }
+details[open] summary::before { transform: rotate(90deg); }
+
+.card { background: var(--sheet); border: 1px solid var(--rule); border-radius: 12px; padding: 18px 16px; margin-bottom: 14px; }
+.card h2 { font: 600 1.25rem/1.25 var(--serif); margin: 0 0 8px; }
+.card p { margin: 0 0 12px; }
+.card ol { margin: 0 0 14px; padding-left: 1.2em; }
+.card li { margin-bottom: 6px; }
+.stack > * + * { margin-top: 10px; }
+.empty { color: var(--muted); margin: 8px 2px; }
+.foot { margin-top: 36px; text-align: center; }
+.link-btn { border: 0; background: none; color: var(--muted); text-decoration: underline; cursor: pointer; font-size: .88rem; padding: 8px; }
+
+.report { display: flex; align-items: center; }
+.report .row { flex: 1; width: auto; min-width: 0; padding-right: 6px; }
+.is-unread .rname { font-weight: 600; }
+.is-read .rname { color: var(--muted); }
+.readbtn { flex: none; margin-right: 10px; min-height: 36px; padding: 6px 11px; border-radius: 99px; cursor: pointer; font-size: .82rem; font-weight: 600; white-space: nowrap; border: 1px solid var(--accent); background: none; color: var(--accent); }
+.readbtn[aria-pressed="true"] { border-color: transparent; background: none; color: var(--done); font-weight: 500; }
+.unread-count { color: var(--accent); font-weight: 600; }
+.section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.section-head .link-btn { color: var(--accent); padding: 8px 0; }
+.seg button { flex: 1; padding: 6px 0; border: 0; border-radius: 7px; background: none; cursor: pointer; font-weight: 500; font-size: .92rem; }
+.seg button[aria-pressed="true"] { background: var(--sheet); box-shadow: 0 1px 2px rgba(0,0,0,.12); font-weight: 600; }
+.small-seg { margin: 10px 0 12px; }
+
+.archive { flex: none; width: 34px; height: 34px; border: 0; border-radius: 8px; background: none; color: var(--muted); cursor: pointer; display: grid; place-items: center; padding: 0; margin-top: -4px; }
+.report .archive { margin: 0 6px 0 -4px; }
+.archive:active { background: var(--accent-soft); color: var(--accent); }
+.archive svg { width: 19px; height: 19px; }
+.restore { flex: none; align-self: center; margin-right: 10px; border: 1px solid var(--rule); background: none; color: var(--accent); border-radius: 99px; padding: 5px 12px; cursor: pointer; font-size: .82rem; font-weight: 600; }
+.task .restore { margin-right: 0; }
+.archive-box { margin-top: 26px; }
+.archive-box h4 { font: 600 .78rem/1.3 var(--sans); text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 14px 2px 6px; }
+.archive-box .grow { color: var(--muted); }
+
+.toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom)); transform: translateX(-50%); width: max-content; max-width: calc(100% - 32px); background: var(--ink); color: var(--paper); padding: 10px 16px; border-radius: 10px; font-size: .92rem; z-index: 10; }
+.toast[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<header id="header"></header>
+<main id="main"></main>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script>
+// ---------- settings ----------
+const HUB = "/research_hub";   // where the research_hub folder sits in your Dropbox
+const APP_KEY = "";
+const VERSION = "1.1";            // optional: your Dropbox app key (otherwise the app asks for it once)
+
+// ---------- small helpers ----------
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const byName = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" }).compare;  // "10." after "9."
+// Newest first; files saved in the same second go by name, reversed (names start with dates). Same rule as tracker.py.
+const newestFirst = (a, b) => (b.ts || b.modified).localeCompare(a.ts || a.modified) || byName(b.name, a.name);
+const today = () => new Date().toLocaleDateString("en-CA");  // YYYY-MM-DD, local time
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
+  del(k) { try { localStorage.removeItem(k); } catch (e) {} },
+  json(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } },
+};
+const ICONS = {
+  refresh: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>`,
+  back: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>`,
+  archive: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9"/><path d="M10 13h4"/></svg>`,
+  chev: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>`,
+};
+
+function toast(msg) {
+  const t = $("#toast"); t.textContent = msg; t.hidden = false;
+  clearTimeout(t._h); t._h = setTimeout(() => t.hidden = true, 3200);
+}
+
+async function pool(items, n, fn) {  // run fn over items, n at a time
+  const out = new Array(items.length); let next = 0;
+  await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => {
+    while (next < items.length) { const k = next++; out[k] = await fn(items[k], k); }
+  }));
+  return out;
+}
+
+// ---------- Dropbox sign-in (PKCE, no server needed) ----------
+const appKey = () => APP_KEY || store.get("rh-key") || "";
+const b64url = (bytes) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+async function authUrl() {
+  let v = store.get("rh-verifier");
+  if (!v) { v = b64url(crypto.getRandomValues(new Uint8Array(48))); store.set("rh-verifier", v); }
+  const challenge = b64url(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(v))));
+  return "https://www.dropbox.com/oauth2/authorize?" + new URLSearchParams({
+    client_id: appKey(), response_type: "code", token_access_type: "offline",
+    code_challenge: challenge, code_challenge_method: "S256",
+  });
+}
+
+async function tokenRequest(params) {
+  const r = await fetch("https://api.dropboxapi.com/oauth2/token", {
+    method: "POST", body: new URLSearchParams({ client_id: appKey(), ...params }),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error_description || data.error || "Dropbox sign-in failed.");
+  store.set("rh-access", data.access_token);
+  store.set("rh-expires", String(Date.now() + (data.expires_in || 14400) * 1000));
+  if (data.refresh_token) store.set("rh-refresh", data.refresh_token);
+}
+
+async function finishConnect(code) {
+  await tokenRequest({ grant_type: "authorization_code", code: code.trim(), code_verifier: store.get("rh-verifier") });
+  store.del("rh-verifier");
+}
+
+async function accessToken() {
+  if (store.get("rh-access") && +store.get("rh-expires") > Date.now() + 60000) return store.get("rh-access");
+  if (!store.get("rh-refresh")) throw Object.assign(new Error("Not connected"), { signedOut: true });
+  try { await tokenRequest({ grant_type: "refresh_token", refresh_token: store.get("rh-refresh") }); }
+  catch (e) { store.del("rh-refresh"); throw Object.assign(e, { signedOut: true }); }
+  return store.get("rh-access");
+}
+
+function signOut() {
+  const t = store.get("rh-access");
+  if (t) fetch("https://api.dropboxapi.com/2/auth/token/revoke", { method: "POST", headers: { Authorization: `Bearer ${t}` } }).catch(() => {});
+  ["rh-access", "rh-expires", "rh-refresh", "rh-verifier", "rh-all", "rh-cache", "rh-recent"].forEach(store.del);
+  try { Object.keys(localStorage).filter(k => k.startsWith("rh-p:")).forEach(store.del); } catch (e) {}
+  state.projects = state.project = null;
+}
+
+// ---------- Dropbox files API ----------
+// Header values must be ASCII, so escape accents etc. in paths.
+const headerJson = (o) => JSON.stringify(o).replace(/[\u007f-\uffff]/g, c => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0"));
+
+async function dbx(url, opts = {}, retry = true) {
+  const r = await fetch(url, { method: "POST", ...opts, headers: { ...opts.headers, Authorization: `Bearer ${await accessToken()}` } });
+  if (r.status === 401 && retry) { store.del("rh-access"); return dbx(url, opts, false); }
+  if (!r.ok) {
+    const text = await r.text().catch(() => "");
+    let summary = text; try { summary = JSON.parse(text).error_summary || text; } catch (e) {}
+    throw Object.assign(new Error(summary || r.statusText), { status: r.status, summary: summary || "" });
+  }
+  return r;
+}
+const rpc = async (endpoint, args) => (await dbx(`https://api.dropboxapi.com/2/${endpoint}`, {
+  headers: { "Content-Type": "application/json" }, body: JSON.stringify(args),
+})).json();
+const notFound = (e) => e.status === 409 && /not_found/.test(e.summary);
+
+async function listFolder(path) {
+  let res = await rpc("files/list_folder", { path, limit: 2000 });
+  const entries = [...res.entries];
+  while (res.has_more) { res = await rpc("files/list_folder/continue", { cursor: res.cursor }); entries.push(...res.entries); }
+  return entries;
+}
+async function download(path) {
+  const r = await dbx("https://content.dropboxapi.com/2/files/download", { headers: { "Dropbox-API-Arg": headerJson({ path }) } });
+  return r.text();
+}
+async function downloadOr(path, fallback) {
+  try { return await download(path); } catch (e) { if (notFound(e)) return fallback; throw e; }
+}
+async function upload(path, text, rev) {
+  const mode = rev ? { ".tag": "update", update: rev } : { ".tag": "add" };  // refuse to overwrite edits made elsewhere
+  const r = await dbx("https://content.dropboxapi.com/2/files/upload", {
+    headers: { "Content-Type": "application/octet-stream", "Dropbox-API-Arg": headerJson({ path, mode, autorename: false, mute: true }) },
+    body: new TextEncoder().encode(text),
+  });
+  return r.json();
+}
+
+// ---------- research hub files (same format as tracker.py) ----------
+const TASK_RE = /^\s*[-*]\s*\[( |x|X)\]\s*(.*?)\s*$/;
+const DONE_RE = /\s+\(done (\d{4}-\d{2}-\d{2})\)$/;
+const READ_FILE = "READ_REPORTS.txt";  // per project: names of reports marked as read, one per line
+const ARCHIVE_FILE = "ARCHIVED_REPORTS.txt";  // per project: names of archived reports, one per line
+const HEADING_RE = /^\s*#+\s*(.*?)\s*$/;
+const projectPath = (name) => `${HUB}/projects/${name}`;
+
+function parseTasks(text) {
+  const tasks = [];
+  let archived = false;  // tasks under an "## Archived" heading are archived
+  for (const line of text.split(/\r?\n/)) {
+    const h = HEADING_RE.exec(line);
+    if (h) { archived = h[1].toLowerCase() === "archived"; continue; }
+    const m = TASK_RE.exec(line);
+    if (!m) continue;
+    let body = m[2], date = null;
+    const d = DONE_RE.exec(body);
+    if (d) { date = d[1]; body = body.slice(0, d.index); }
+    if (body) tasks.push({ text: body, done: m[1].toLowerCase() === "x", date, archived });
+  }
+  return tasks;
+}
+
+const taskLine = (t) => t.done ? `- [x] ${t.text}${t.date ? ` (done ${t.date})` : ""}` : `- [ ] ${t.text}`;
+
+function serializeTasks(name, tasks) {
+  const active = tasks.filter(t => !t.archived), archived = tasks.filter(t => t.archived);
+  const lines = [`# ${name}`, "", "## To do", ...active.filter(t => !t.done).map(taskLine), "", "## Completed", ...active.filter(t => t.done).map(taskLine)];
+  if (archived.length) lines.push("", "## Archived", ...archived.map(taskLine));
+  return lines.join("\n") + "\n";
+}
+
+// Report marks: which reports are read, and which are archived. Same files and format as tracker.py.
+const MARKS = {
+  read: { file: READ_FILE, rev: "readRev", header: "# Reports marked as read in the Research Hub app (one file name per line)." },
+  archivedReports: { file: ARCHIVE_FILE, rev: "archiveRev", header: "# Reports archived in the Research Hub app (one file name per line)." },
+};
+const parseNames = (text) => text.split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith("#"));
+
+function serializeMarks(p, key) {
+  // Only keep reports that still exist, so the file doesn't grow forever.
+  const names = p.reports.filter(r => p[key].includes(r.name)).map(r => r.name);
+  return [MARKS[key].header, ...names].join("\n") + "\n";
+}
+
+const isRead = (p, r) => p.read.includes(r.name);
+const isArchived = (p, r) => (p.archivedReports || []).includes(r.name);
+const activeReports = (p) => p.reports.filter(r => !isArchived(p, r));
+const openCount = (p) => p.tasks.filter(t => !t.done && !t.archived).length;
+const unreadCount = (p) => activeReports(p).filter(r => !isRead(p, r)).length;
+
+async function reportsDirOf(name, entries) {
+  // REPORTS.txt (first line = folder inside Dropbox) wins; otherwise the project's own "reports" folder.
+  const pointer = entries.some(e => e.name === "REPORTS.txt")
+    ? (await downloadOr(`${projectPath(name)}/REPORTS.txt`, "")).trim().split(/\r?\n/)[0].trim() : "";
+  return pointer ? "/" + pointer.replace(/^\/+/, "") : `${projectPath(name)}/reports`;
+}
+
+async function listReports(dir) {
+  let entries;
+  try { entries = await listFolder(dir); } catch (e) { if (notFound(e)) return []; throw e; }
+  return entries
+    .filter(e => e[".tag"] === "file" && !e.name.startsWith("."))
+    .map(e => {
+      const ts = e.client_modified || e.server_modified || "";  // exact save time, like the Mac tracker uses
+      return { name: e.name, path: e.path_lower, ts, modified: ts.slice(0, 10) };
+    })
+    .sort(newestFirst);
+}
+
+async function loadProject(name) {
+  const entries = await listFolder(projectPath(name));
+  const file = (n) => entries.find(e => e[".tag"] === "file" && e.name === n);
+  const tasksFile = file("TASKS.md"), readFile = file(READ_FILE), archiveFile = file(ARCHIVE_FILE);
+  const [text, readText, archiveText, reports] = await Promise.all([
+    tasksFile ? download(tasksFile.path_lower) : "",
+    readFile ? download(readFile.path_lower) : "",
+    archiveFile ? download(archiveFile.path_lower) : "",
+    reportsDirOf(name, entries).then(listReports),
+  ]);
+  return {
+    name, reports,
+    tasks: parseTasks(text), rev: tasksFile ? tasksFile.rev : null,
+    read: parseNames(readText), readRev: readFile ? readFile.rev : null,
+    archivedReports: parseNames(archiveText), archiveRev: archiveFile ? archiveFile.rev : null,
+  };
+}
+
+async function loadAll() {
+  let entries;
+  try { entries = await listFolder(`${HUB}/projects`); }
+  catch (e) { if (notFound(e)) throw new Error(`Couldn't find ${HUB}/projects in your Dropbox.`); throw e; }
+  const names = entries.filter(e => e[".tag"] === "folder" && !e.name.startsWith(".")).map(e => e.name).sort(byName);
+  return pool(names, 6, loadProject);
+}
+
+// ---------- app state + routing ----------
+// Everything last loaded is kept on the phone, so the app opens instantly and then refreshes.
+const cached = store.json("rh-all");
+const state = {
+  projects: Array.isArray(cached) ? cached.map(p => ({ ...p, fromCache: true })) : null,
+  project: null,
+  filter: "",
+  unreadOnly: false,
+  busy: 0,
+};
+let saving = Promise.resolve();
+
+const saveCache = () => store.set("rh-all", JSON.stringify(state.projects || []));
+const findProject = (name) => (state.projects || []).find(p => p.name === name);
+function putProject(p) {
+  if (!state.projects) state.projects = [];
+  const i = state.projects.findIndex(x => x.name === p.name);
+  if (i >= 0) state.projects[i] = p; else state.projects.push(p), state.projects.sort((a, b) => byName(a.name, b.name));
+  saveCache();
+}
+
+function route() {
+  const h = location.hash;
+  if (!appKey() || (!store.get("rh-refresh") && !store.get("rh-access"))) return showSetup();
+  if (h.startsWith("#/p/")) return showProject(decodeURIComponent(h.slice(4)));
+  if (h === "#/recent") return showRecent();
+  return showHome();
+}
+window.addEventListener("hashchange", route);
+document.addEventListener("visibilitychange", () => { if (!document.hidden && appKey() && store.get("rh-refresh")) route(); });
+
+async function busy(fn) {
+  state.busy++; $("#refresh")?.classList.add("spin");
+  try { return await fn(); }
+  catch (e) {
+    if (e.signedOut) { signOut(); showSetup("Your Dropbox connection expired. Please connect again."); }
+    else toast(e.message === "Failed to fetch" ? "Couldn't reach Dropbox. Check your connection." : e.message);
+  }
+  finally { if (--state.busy === 0) $("#refresh")?.classList.remove("spin"); }
+}
+
+function header({ title, back, tabs }) {
+  $("#header").innerHTML = `
+    <div class="bar">
+      ${back ? `<a class="icon-btn" href="#/" aria-label="Back to projects">${ICONS.back}</a>` : ""}
+      <h1>${esc(title)}</h1>
+      <button class="icon-btn ${state.busy ? "spin" : ""}" id="refresh" aria-label="Refresh">${ICONS.refresh}</button>
+    </div>
+    ${tabs ? `<nav class="seg">
+      <a href="#/" ${tabs === "home" ? 'aria-current="page"' : ""}>Projects</a>
+      <a href="#/recent" ${tabs === "recent" ? 'aria-current="page"' : ""}>Recent PDFs</a>
+    </nav>` : ""}`;
+  $("#refresh").onclick = () => route();
+}
+
+function refreshAll(view, render) {
+  busy(async () => {
+    state.projects = await loadAll();
+    saveCache();
+    if (currentView() === view) render(true);
+  });
+}
+const currentView = () => location.hash.startsWith("#/p/") ? "project" : location.hash === "#/recent" ? "recent" : "home";
+
+// ---------- views ----------
+function showHome() {
+  document.title = "Research Hub";
+  header({ title: "Research Hub", tabs: "home" });
+  renderHome();
+  refreshAll("home", renderHome);
+}
+
+function renderHome() {
+  const all = state.projects;
+  const summary = (p) => {
+    const open = openCount(p), unread = unreadCount(p);
+    const tasks = open ? `${open} to do` : "no tasks";
+    const reports = unread ? `<b class="unread-count">${unread} unread</b>` : activeReports(p).length ? "all read" : "no reports";
+    return `${tasks} · ${reports}`;
+  };
+  $("#main").innerHTML = !all ? `<p class="empty">Loading your projects…</p>`
+    : !all.length ? `<p class="empty">No projects yet. Add them on your computer with <b>+ Add project</b> in the Research Hub, or make a folder for each project in <b>research_hub/projects</b>.</p>`
+    : `<ul class="list">${all.map(p => `
+        <li><a class="row" href="#/p/${encodeURIComponent(p.name)}">
+          <span class="grow">${esc(p.name)}<span class="sub">${summary(p)}</span></span>
+          <span class="chev">${ICONS.chev}</span>
+        </a></li>`).join("")}</ul>
+      <div class="foot"><p class="muted small" style="margin:0">Research Hub v${VERSION}</p><button class="link-btn" id="signout">Disconnect Dropbox</button></div>`;
+  const so = $("#signout");
+  if (so) so.onclick = () => { if (confirm("Disconnect this phone from your Dropbox?")) { signOut(); showSetup(); } };
+}
+
+function showProject(name) {
+  document.title = name;
+  header({ title: name, back: true });
+  state.project = findProject(name) || null;
+  renderProject(name);
+  busy(async () => {
+    const p = await loadProject(name);
+    putProject(p);
+    if (location.hash !== "#/p/" + encodeURIComponent(name)) return;
+    state.project = p;
+    renderProject(name);
+  });
+}
+
+function renderProject(name) {
+  const p = state.project;
+  if (!p || p.name !== name) { $("#main").innerHTML = `<p class="empty">Loading…</p>`; return; }
+  const all = p.tasks.map((t, i) => ({ ...t, i }));
+  const tasks = all.filter(t => !t.archived), archivedTasks = all.filter(t => t.archived);
+  const open = tasks.filter(t => !t.done);
+  const done = tasks.filter(t => t.done).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  const reports = activeReports(p), archivedReports = p.reports.filter(r => isArchived(p, r));
+  const unread = unreadCount(p);
+  const archivedCount = archivedTasks.length + archivedReports.length;
+  const row = t => `
+    <li class="task ${t.done ? "done" : ""}">
+      <button class="check" data-act="toggle" data-i="${t.i}" aria-label="${t.done ? "Mark as not done" : "Mark as done"}: ${esc(t.text)}"></button>
+      <span class="grow">${esc(t.text)}</span>
+      ${t.date ? `<span class="date">${t.date}</span>` : ""}
+      <button class="archive" data-act="archive" data-i="${t.i}" aria-label="Archive task: ${esc(t.text)}">${ICONS.archive}</button>
+      <button class="remove" data-act="delete" data-i="${t.i}" aria-label="Delete task: ${esc(t.text)}">×</button>
+    </li>`;
+
+  $("#main").innerHTML = `
+    <p class="muted small" style="margin:0 0 12px">${open.length} to do, ${done.length} completed · ${reports.length} ${reports.length === 1 ? "report" : "reports"}, ${unread} unread${archivedCount ? ` · ${archivedCount} archived` : ""}</p>
+    <form class="add" id="add">
+      <input class="field" id="newtask" placeholder="Add a task" autocomplete="off" enterkeyhint="done" aria-label="New task">
+      <button class="btn" type="submit">Add</button>
+    </form>
+    <h3>To do</h3>
+    ${open.length ? "" : `<p class="empty">Nothing to do here.</p>`}
+    <ul class="list">${open.map(row).join("")}</ul>
+    <details ${done.length && done.length <= 5 ? "open" : ""}>
+      <summary><h3>Completed (${done.length})</h3></summary>
+      <ul class="list">${done.map(row).join("")}</ul>
+    </details>
+    <div class="section-head">
+      <h3>Reports</h3>
+      ${unread ? `<button class="link-btn" data-allread>Mark all as read</button>` : ""}
+    </div>
+    ${reports.length ? "" : `<p class="empty">${p.reports.length ? "All reports are archived." : "No reports yet."}</p>`}
+    <ul class="list">${reports.map(r => reportRow(p, r)).join("")}</ul>
+    ${archivedCount ? `<details class="archive-box">
+      <summary><h3>Archive (${archivedCount})</h3></summary>
+      ${archivedTasks.length ? `<h4>Tasks</h4><ul class="list">${archivedTasks.map(t => `
+        <li class="task ${t.done ? "done" : ""}">
+          <span class="grow">${esc(t.text)}</span>
+          <button class="restore" data-act="unarchive" data-i="${t.i}" aria-label="Restore task: ${esc(t.text)}">Restore</button>
+        </li>`).join("")}</ul>` : ""}
+      ${archivedReports.length ? `<h4>Reports</h4><ul class="list">${archivedReports.map(r => `
+        <li class="report is-read">
+          <button class="row" data-open="${esc(r.path)}"><span class="grow"><span class="rname">${esc(r.name)}</span><span class="sub">${r.modified}</span></span></button>
+          <button class="restore" data-unarchive="${esc(p.name)}" data-name="${esc(r.name)}" aria-label="Restore report: ${esc(r.name)}">Restore</button>
+        </li>`).join("")}</ul>` : ""}
+    </details>` : ""}`;
+
+  $("#add").onsubmit = (e) => {
+    e.preventDefault();
+    const text = $("#newtask").value.split(/\s+/).filter(Boolean).join(" ");
+    if (!text) return;
+    changeTasks(p, tasks => tasks.push({ text, done: false, date: null }));
+    $("#newtask").focus();
+  };
+}
+
+function reportRow(p, r, showProject) {
+  const ext = (r.name.split(".").pop() || "").slice(0, 4).toUpperCase();
+  const read = isRead(p, r);
+  return `<li class="report ${read ? "is-read" : "is-unread"}">
+    <button class="row" data-open="${esc(r.path)}">
+      <span class="pdf" aria-hidden="true">${esc(ext)}</span>
+      <span class="grow"><span class="rname">${esc(r.name)}</span><span class="sub">${showProject ? esc(p.name) + " · " : ""}${r.modified}</span></span>
+    </button>
+    <button class="readbtn" data-read="${esc(p.name)}" data-name="${esc(r.name)}" aria-pressed="${read}"
+      aria-label="${read ? "Read. Tap to mark as unread" : "Unread. Tap to mark as read"}: ${esc(r.name)}">${read ? "✓ Read" : "Mark read"}</button>
+    <button class="archive" data-archive="${esc(p.name)}" data-name="${esc(r.name)}" aria-label="Archive report: ${esc(r.name)}">${ICONS.archive}</button>
+  </li>`;
+}
+
+// Save a project file to Dropbox, in order. rev makes Dropbox refuse if it was changed elsewhere.
+function persist(p, fileName, text, revKey) {
+  saveCache();
+  saving = saving.then(() => busy(async () => {
+    if (p.failed) return;
+    try {
+      const meta = await upload(`${projectPath(p.name)}/${fileName}`, text, p[revKey]);
+      p[revKey] = meta.rev;
+      saveCache();
+    } catch (e) {
+      p.failed = true;
+      toast(e.status === 409 ? "This was changed on another device. Reloaded, please try again." : "Couldn't save: " + e.message);
+      route();
+    }
+  }));
+}
+
+const editable = (p) => {
+  if (p && !p.fromCache && !p.failed) return true;
+  toast("Still loading, try again in a second.");
+  return false;
+};
+
+function rerender() {
+  const v = currentView();
+  if (v === "project" && state.project) renderProject(state.project.name);
+  else if (v === "recent") renderRecent(true);
+  else renderHome();
+}
+
+function changeTasks(p, mutate) {
+  if (!editable(p)) return;
+  mutate(p.tasks);
+  rerender();
+  persist(p, "TASKS.md", serializeTasks(p.name, p.tasks), "rev");
+}
+
+function setMark(p, key, names, value) {
+  if (!editable(p)) return;
+  const cur = p[key] || [];
+  p[key] = value ? [...new Set([...cur, ...names])] : cur.filter(n => !names.includes(n));
+  rerender();
+  persist(p, MARKS[key].file, serializeMarks(p, key), MARKS[key].rev);
+}
+const setRead = (p, names, value) => setMark(p, "read", names, value);
+
+function showRecent() {
+  document.title = "Recent PDFs";
+  header({ title: "Research Hub", tabs: "recent" });
+  renderRecent();
+  refreshAll("recent", renderRecent);
+}
+
+function renderRecent(listOnly) {
+  const all = state.projects;
+  const q = state.filter.toLowerCase();
+  const items = (all || [])
+    .flatMap(p => activeReports(p).map(r => ({ p, r })))
+    .filter(({ p, r }) => (!state.unreadOnly || !isRead(p, r)) && (!q || r.name.toLowerCase().includes(q) || p.name.toLowerCase().includes(q)))
+    .sort((a, b) => newestFirst(a.r, b.r));
+  const unreadTotal = (all || []).reduce((n, p) => n + unreadCount(p), 0);
+  const list = `${!all ? `<p class="empty">Collecting reports from all projects…</p>`
+    : !items.length ? `<p class="empty">${q ? "No reports match." : state.unreadOnly ? "You've read everything." : "No reports yet."}</p>` : ""}
+    <ul class="list">${items.slice(0, 300).map(({ p, r }) => reportRow(p, r, true)).join("")}</ul>`;
+  if (listOnly && $("#recent-list")) {
+    $("#recent-list").innerHTML = list;
+    $("#unread-tab").textContent = `Unread (${unreadTotal})`;
+    return;
+  }
+  $("#main").innerHTML = `
+    <input class="field" id="filter" type="search" placeholder="Search reports or projects" value="${esc(state.filter)}" aria-label="Search reports" style="width:100%">
+    <div class="seg small-seg" role="group" aria-label="Which reports">
+      <button type="button" id="all-tab" aria-pressed="${!state.unreadOnly}">All</button>
+      <button type="button" id="unread-tab" aria-pressed="${state.unreadOnly}">Unread (${unreadTotal})</button>
+    </div>
+    <div id="recent-list">${list}</div>`;
+  $("#filter").oninput = (e) => { state.filter = e.target.value; renderRecent(true); };
+  $("#all-tab").onclick = () => { state.unreadOnly = false; renderRecent(); };
+  $("#unread-tab").onclick = () => { state.unreadOnly = true; renderRecent(); };
+}
+
+function showSetup(message) {
+  document.title = "Research Hub";
+  $("#header").innerHTML = `<div class="bar"><h1>Research Hub</h1></div>`;
+  if (!appKey()) {
+    $("#main").innerHTML = `
+      <div class="card">
+        <h2>Step 1 of 2: your Dropbox app key</h2>
+        ${message ? `<p>${esc(message)}</p>` : ""}
+        <p>Paste the <b>App key</b> from your Dropbox app's Settings page.</p>
+        <form id="keyform" class="stack">
+          <input class="field" id="key" placeholder="App key" autocomplete="off" autocapitalize="off" spellcheck="false" style="width:100%">
+          <button class="btn block" type="submit">Continue</button>
+        </form>
+      </div>`;
+    $("#keyform").onsubmit = (e) => {
+      e.preventDefault();
+      const k = $("#key").value.trim();
+      if (!k) return;
+      store.set("rh-key", k); showSetup();
+    };
+    return;
+  }
+  $("#main").innerHTML = `
+    <div class="card">
+      <h2>Step 2 of 2: connect Dropbox</h2>
+      ${message ? `<p style="color:var(--accent);font-weight:600">${esc(message)}</p>` : ""}
+      <ol>
+        <li>Tap <b>Open Dropbox</b> and allow access.</li>
+        <li>Dropbox shows a code. Copy it.</li>
+        <li>Come back here and paste it below.</li>
+      </ol>
+      <div class="stack">
+        <a class="btn block" id="authlink" target="_blank" rel="noopener" aria-disabled="true">Open Dropbox</a>
+        <form id="codeform" class="stack">
+          <input class="field" id="code" placeholder="Paste the code here" autocomplete="off" autocapitalize="off" spellcheck="false" style="width:100%">
+          <button class="btn block" type="submit">Finish</button>
+        </form>
+      </div>
+    </div>
+    ${APP_KEY ? "" : `<div class="foot"><button class="link-btn" id="rekey">Use a different app key</button></div>`}`;
+  authUrl().then(u => { $("#authlink").href = u; $("#authlink").removeAttribute("aria-disabled"); });
+  $("#codeform").onsubmit = async (e) => {
+    e.preventDefault();
+    const code = $("#code").value;
+    if (!code.trim()) return;
+    try { await finishConnect(code); location.hash = "#/"; route(); }
+    catch (err) {
+      // Keep the same verifier, so any code from this app's "Open Dropbox" link still works.
+      const why = /verifier|expired|doesn't exist|does not exist|invalid_grant/i.test(err.message)
+        ? "That code didn't work (it may be from an older Dropbox page, or already used)."
+        : /client|app key|invalid_client/i.test(err.message) ? "Dropbox didn't accept the app key. Check it via “Use a different app key” below."
+        : err.message === "Failed to fetch" ? "Couldn't reach Dropbox. Check your connection." : err.message;
+      showSetup(why + " Tap Open Dropbox again, then paste the new code it shows.");
+    }
+  };
+  const rk = $("#rekey");
+  if (rk) rk.onclick = () => { store.del("rh-key"); showSetup(); };
+}
+
+// ---------- taps ----------
+document.addEventListener("click", async (e) => {
+  const openBtn = e.target.closest("[data-open]");
+  if (openBtn) {
+    // In the home-screen app, open the PDF in the in-app browser (tap Done to come back).
+    const standalone = navigator.standalone || matchMedia("(display-mode: standalone)").matches;
+    const win = standalone ? null : window.open("", "_blank");
+    await busy(async () => {
+      try {
+        const { link } = await rpc("files/get_temporary_link", { path: openBtn.dataset.open });
+        if (win) win.location = link; else location.assign(link);
+      } catch (err) { if (win) win.close(); throw err; }
+    });
+    return;
+  }
+  const readBtn = e.target.closest("[data-read]");
+  if (readBtn) {
+    const p = findProject(readBtn.dataset.read);
+    const r = p && p.reports.find(x => x.name === readBtn.dataset.name);
+    if (r) setRead(p, [r.name], !isRead(p, r));
+    return;
+  }
+  const arcBtn = e.target.closest("[data-archive], [data-unarchive]");
+  if (arcBtn) {
+    const archive = arcBtn.hasAttribute("data-archive");
+    const p = findProject(arcBtn.dataset.archive || arcBtn.dataset.unarchive);
+    if (p) setMark(p, "archivedReports", [arcBtn.dataset.name], archive);
+    return;
+  }
+  if (e.target.closest("[data-allread]")) {
+    const p = state.project, unread = p ? activeReports(p).filter(r => !isRead(p, r)) : [];
+    if (unread.length && confirm(`Mark all ${unread.length} reports in ${p.name} as read?`)) setRead(p, unread.map(r => r.name), true);
+    return;
+  }
+  const btn = e.target.closest("[data-act]");
+  const p = state.project;
+  if (!btn || !p) return;
+  const i = +btn.dataset.i, t = p.tasks[i];
+  if (!t) return;
+  if (btn.dataset.act === "delete") {
+    if (confirm(`Delete "${t.text}"?`)) changeTasks(p, tasks => tasks.splice(i, 1));
+  } else if (btn.dataset.act === "archive" || btn.dataset.act === "unarchive") {
+    changeTasks(p, tasks => { tasks[i].archived = btn.dataset.act === "archive"; });
+  } else {
+    changeTasks(p, tasks => { tasks[i].done = !tasks[i].done; tasks[i].date = tasks[i].done ? today() : null; });
+  }
+});
+
+route();
+</script>
+</body>
+</html>
