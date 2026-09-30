@@ -118,6 +118,16 @@ details[open] summary::before { transform: rotate(90deg); }
 .seg button[aria-pressed="true"] { background: var(--sheet); box-shadow: 0 1px 2px rgba(0,0,0,.12); font-weight: 600; }
 .small-seg { margin: 10px 0 12px; }
 
+.archive { flex: none; width: 34px; height: 34px; border: 0; border-radius: 8px; background: none; color: var(--muted); cursor: pointer; display: grid; place-items: center; padding: 0; margin-top: -4px; }
+.report .archive { margin: 0 6px 0 -4px; }
+.archive:active { background: var(--accent-soft); color: var(--accent); }
+.archive svg { width: 19px; height: 19px; }
+.restore { flex: none; align-self: center; margin-right: 10px; border: 1px solid var(--rule); background: none; color: var(--accent); border-radius: 99px; padding: 5px 12px; cursor: pointer; font-size: .82rem; font-weight: 600; }
+.task .restore { margin-right: 0; }
+.archive-box { margin-top: 26px; }
+.archive-box h4 { font: 600 .78rem/1.3 var(--sans); text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 14px 2px 6px; }
+.archive-box .grow { color: var(--muted); }
+
 .toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom)); transform: translateX(-50%); width: max-content; max-width: calc(100% - 32px); background: var(--ink); color: var(--paper); padding: 10px 16px; border-radius: 10px; font-size: .92rem; z-index: 10; }
 .toast[hidden] { display: none; }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
@@ -149,6 +159,7 @@ const store = {
 const ICONS = {
   refresh: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>`,
   back: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>`,
+  archive: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9"/><path d="M10 13h4"/></svg>`,
   chev: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>`,
 };
 
@@ -256,38 +267,53 @@ async function upload(path, text, rev) {
 const TASK_RE = /^\s*[-*]\s*\[( |x|X)\]\s*(.*?)\s*$/;
 const DONE_RE = /\s+\(done (\d{4}-\d{2}-\d{2})\)$/;
 const READ_FILE = "READ_REPORTS.txt";  // per project: names of reports marked as read, one per line
+const ARCHIVE_FILE = "ARCHIVED_REPORTS.txt";  // per project: names of archived reports, one per line
+const HEADING_RE = /^\s*#+\s*(.*?)\s*$/;
 const projectPath = (name) => `${HUB}/projects/${name}`;
 
 function parseTasks(text) {
   const tasks = [];
+  let archived = false;  // tasks under an "## Archived" heading are archived
   for (const line of text.split(/\r?\n/)) {
+    const h = HEADING_RE.exec(line);
+    if (h) { archived = h[1].toLowerCase() === "archived"; continue; }
     const m = TASK_RE.exec(line);
     if (!m) continue;
     let body = m[2], date = null;
     const d = DONE_RE.exec(body);
     if (d) { date = d[1]; body = body.slice(0, d.index); }
-    if (body) tasks.push({ text: body, done: m[1].toLowerCase() === "x", date });
+    if (body) tasks.push({ text: body, done: m[1].toLowerCase() === "x", date, archived });
   }
   return tasks;
 }
 
+const taskLine = (t) => t.done ? `- [x] ${t.text}${t.date ? ` (done ${t.date})` : ""}` : `- [ ] ${t.text}`;
+
 function serializeTasks(name, tasks) {
-  const lines = [`# ${name}`, "", "## To do", ...tasks.filter(t => !t.done).map(t => `- [ ] ${t.text}`), "", "## Completed"];
-  for (const t of tasks) if (t.done) lines.push(`- [x] ${t.text}${t.date ? ` (done ${t.date})` : ""}`);
+  const active = tasks.filter(t => !t.archived), archived = tasks.filter(t => t.archived);
+  const lines = [`# ${name}`, "", "## To do", ...active.filter(t => !t.done).map(taskLine), "", "## Completed", ...active.filter(t => t.done).map(taskLine)];
+  if (archived.length) lines.push("", "## Archived", ...archived.map(taskLine));
   return lines.join("\n") + "\n";
 }
 
-const parseRead = (text) => text.split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith("#"));
+// Report marks: which reports are read, and which are archived. Same files and format as tracker.py.
+const MARKS = {
+  read: { file: READ_FILE, rev: "readRev", header: "# Reports marked as read in the Research Hub app (one file name per line)." },
+  archivedReports: { file: ARCHIVE_FILE, rev: "archiveRev", header: "# Reports archived in the Research Hub app (one file name per line)." },
+};
+const parseNames = (text) => text.split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith("#"));
 
-function serializeRead(p) {
+function serializeMarks(p, key) {
   // Only keep reports that still exist, so the file doesn't grow forever.
-  const names = p.reports.filter(r => p.read.includes(r.name)).map(r => r.name);
-  return ["# Reports marked as read in the Research Hub app (one file name per line).", ...names].join("\n") + "\n";
+  const names = p.reports.filter(r => p[key].includes(r.name)).map(r => r.name);
+  return [MARKS[key].header, ...names].join("\n") + "\n";
 }
 
 const isRead = (p, r) => p.read.includes(r.name);
-const openCount = (p) => p.tasks.filter(t => !t.done).length;
-const unreadCount = (p) => p.reports.filter(r => !isRead(p, r)).length;
+const isArchived = (p, r) => (p.archivedReports || []).includes(r.name);
+const activeReports = (p) => p.reports.filter(r => !isArchived(p, r));
+const openCount = (p) => p.tasks.filter(t => !t.done && !t.archived).length;
+const unreadCount = (p) => activeReports(p).filter(r => !isRead(p, r)).length;
 
 async function reportsDirOf(name, entries) {
   // REPORTS.txt (first line = folder inside Dropbox) wins; otherwise the project's own "reports" folder.
@@ -311,16 +337,18 @@ async function listReports(dir) {
 async function loadProject(name) {
   const entries = await listFolder(projectPath(name));
   const file = (n) => entries.find(e => e[".tag"] === "file" && e.name === n);
-  const tasksFile = file("TASKS.md"), readFile = file(READ_FILE);
-  const [text, readText, reports] = await Promise.all([
+  const tasksFile = file("TASKS.md"), readFile = file(READ_FILE), archiveFile = file(ARCHIVE_FILE);
+  const [text, readText, archiveText, reports] = await Promise.all([
     tasksFile ? download(tasksFile.path_lower) : "",
     readFile ? download(readFile.path_lower) : "",
+    archiveFile ? download(archiveFile.path_lower) : "",
     reportsDirOf(name, entries).then(listReports),
   ]);
   return {
     name, reports,
     tasks: parseTasks(text), rev: tasksFile ? tasksFile.rev : null,
-    read: parseRead(readText), readRev: readFile ? readFile.rev : null,
+    read: parseNames(readText), readRev: readFile ? readFile.rev : null,
+    archivedReports: parseNames(archiveText), archiveRev: archiveFile ? archiveFile.rev : null,
   };
 }
 
@@ -409,7 +437,7 @@ function renderHome() {
   const summary = (p) => {
     const open = openCount(p), unread = unreadCount(p);
     const tasks = open ? `${open} to do` : "no tasks";
-    const reports = unread ? `<b class="unread-count">${unread} unread</b>` : p.reports.length ? "all read" : "no reports";
+    const reports = unread ? `<b class="unread-count">${unread} unread</b>` : activeReports(p).length ? "all read" : "no reports";
     return `${tasks} · ${reports}`;
   };
   $("#main").innerHTML = !all ? `<p class="empty">Loading your projects…</p>`
@@ -441,20 +469,24 @@ function showProject(name) {
 function renderProject(name) {
   const p = state.project;
   if (!p || p.name !== name) { $("#main").innerHTML = `<p class="empty">Loading…</p>`; return; }
-  const tasks = p.tasks.map((t, i) => ({ ...t, i }));
+  const all = p.tasks.map((t, i) => ({ ...t, i }));
+  const tasks = all.filter(t => !t.archived), archivedTasks = all.filter(t => t.archived);
   const open = tasks.filter(t => !t.done);
   const done = tasks.filter(t => t.done).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  const reports = activeReports(p), archivedReports = p.reports.filter(r => isArchived(p, r));
   const unread = unreadCount(p);
+  const archivedCount = archivedTasks.length + archivedReports.length;
   const row = t => `
     <li class="task ${t.done ? "done" : ""}">
       <button class="check" data-act="toggle" data-i="${t.i}" aria-label="${t.done ? "Mark as not done" : "Mark as done"}: ${esc(t.text)}"></button>
       <span class="grow">${esc(t.text)}</span>
       ${t.date ? `<span class="date">${t.date}</span>` : ""}
+      <button class="archive" data-act="archive" data-i="${t.i}" aria-label="Archive task: ${esc(t.text)}">${ICONS.archive}</button>
       <button class="remove" data-act="delete" data-i="${t.i}" aria-label="Delete task: ${esc(t.text)}">×</button>
     </li>`;
 
   $("#main").innerHTML = `
-    <p class="muted small" style="margin:0 0 12px">${open.length} to do, ${done.length} completed · ${p.reports.length} ${p.reports.length === 1 ? "report" : "reports"}, ${unread} unread</p>
+    <p class="muted small" style="margin:0 0 12px">${open.length} to do, ${done.length} completed · ${reports.length} ${reports.length === 1 ? "report" : "reports"}, ${unread} unread${archivedCount ? ` · ${archivedCount} archived` : ""}</p>
     <form class="add" id="add">
       <input class="field" id="newtask" placeholder="Add a task" autocomplete="off" enterkeyhint="done" aria-label="New task">
       <button class="btn" type="submit">Add</button>
@@ -470,8 +502,21 @@ function renderProject(name) {
       <h3>Reports</h3>
       ${unread ? `<button class="link-btn" data-allread>Mark all as read</button>` : ""}
     </div>
-    ${p.reports.length ? "" : `<p class="empty">No reports yet.</p>`}
-    <ul class="list">${p.reports.map(r => reportRow(p, r)).join("")}</ul>`;
+    ${reports.length ? "" : `<p class="empty">${p.reports.length ? "All reports are archived." : "No reports yet."}</p>`}
+    <ul class="list">${reports.map(r => reportRow(p, r)).join("")}</ul>
+    ${archivedCount ? `<details class="archive-box">
+      <summary><h3>Archive (${archivedCount})</h3></summary>
+      ${archivedTasks.length ? `<h4>Tasks</h4><ul class="list">${archivedTasks.map(t => `
+        <li class="task ${t.done ? "done" : ""}">
+          <span class="grow">${esc(t.text)}</span>
+          <button class="restore" data-act="unarchive" data-i="${t.i}" aria-label="Restore task: ${esc(t.text)}">Restore</button>
+        </li>`).join("")}</ul>` : ""}
+      ${archivedReports.length ? `<h4>Reports</h4><ul class="list">${archivedReports.map(r => `
+        <li class="report is-read">
+          <button class="row" data-open="${esc(r.path)}"><span class="grow"><span class="rname">${esc(r.name)}</span><span class="sub">${r.modified}</span></span></button>
+          <button class="restore" data-unarchive="${esc(p.name)}" data-name="${esc(r.name)}" aria-label="Restore report: ${esc(r.name)}">Restore</button>
+        </li>`).join("")}</ul>` : ""}
+    </details>` : ""}`;
 
   $("#add").onsubmit = (e) => {
     e.preventDefault();
@@ -492,6 +537,7 @@ function reportRow(p, r, showProject) {
     </button>
     <button class="readbtn" data-read="${esc(p.name)}" data-name="${esc(r.name)}" aria-pressed="${read}"
       aria-label="${read ? "Read. Tap to mark as unread" : "Unread. Tap to mark as read"}: ${esc(r.name)}">${read ? "✓ Read" : "Mark read"}</button>
+    <button class="archive" data-archive="${esc(p.name)}" data-name="${esc(r.name)}" aria-label="Archive report: ${esc(r.name)}">${ICONS.archive}</button>
   </li>`;
 }
 
@@ -532,12 +578,14 @@ function changeTasks(p, mutate) {
   persist(p, "TASKS.md", serializeTasks(p.name, p.tasks), "rev");
 }
 
-function setRead(p, names, value) {
+function setMark(p, key, names, value) {
   if (!editable(p)) return;
-  p.read = value ? [...new Set([...p.read, ...names])] : p.read.filter(n => !names.includes(n));
+  const cur = p[key] || [];
+  p[key] = value ? [...new Set([...cur, ...names])] : cur.filter(n => !names.includes(n));
   rerender();
-  persist(p, READ_FILE, serializeRead(p), "readRev");
+  persist(p, MARKS[key].file, serializeMarks(p, key), MARKS[key].rev);
 }
+const setRead = (p, names, value) => setMark(p, "read", names, value);
 
 function showRecent() {
   document.title = "Recent PDFs";
@@ -550,7 +598,7 @@ function renderRecent(listOnly) {
   const all = state.projects;
   const q = state.filter.toLowerCase();
   const items = (all || [])
-    .flatMap(p => p.reports.map(r => ({ p, r })))
+    .flatMap(p => activeReports(p).map(r => ({ p, r })))
     .filter(({ p, r }) => (!state.unreadOnly || !isRead(p, r)) && (!q || r.name.toLowerCase().includes(q) || p.name.toLowerCase().includes(q)))
     .sort((a, b) => newestFirst(a.r, b.r));
   const unreadTotal = (all || []).reduce((n, p) => n + unreadCount(p), 0);
@@ -655,8 +703,15 @@ document.addEventListener("click", async (e) => {
     if (r) setRead(p, [r.name], !isRead(p, r));
     return;
   }
+  const arcBtn = e.target.closest("[data-archive], [data-unarchive]");
+  if (arcBtn) {
+    const archive = arcBtn.hasAttribute("data-archive");
+    const p = findProject(arcBtn.dataset.archive || arcBtn.dataset.unarchive);
+    if (p) setMark(p, "archivedReports", [arcBtn.dataset.name], archive);
+    return;
+  }
   if (e.target.closest("[data-allread]")) {
-    const p = state.project, unread = p ? p.reports.filter(r => !isRead(p, r)) : [];
+    const p = state.project, unread = p ? activeReports(p).filter(r => !isRead(p, r)) : [];
     if (unread.length && confirm(`Mark all ${unread.length} reports in ${p.name} as read?`)) setRead(p, unread.map(r => r.name), true);
     return;
   }
@@ -667,6 +722,8 @@ document.addEventListener("click", async (e) => {
   if (!t) return;
   if (btn.dataset.act === "delete") {
     if (confirm(`Delete "${t.text}"?`)) changeTasks(p, tasks => tasks.splice(i, 1));
+  } else if (btn.dataset.act === "archive" || btn.dataset.act === "unarchive") {
+    changeTasks(p, tasks => { tasks[i].archived = btn.dataset.act === "archive"; });
   } else {
     changeTasks(p, tasks => { tasks[i].done = !tasks[i].done; tasks[i].date = tasks[i].done ? today() : null; });
   }
