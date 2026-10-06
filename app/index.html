@@ -142,7 +142,7 @@ details[open] summary::before { transform: rotate(90deg); }
 // ---------- settings ----------
 const HUB = "/research_hub";   // where the research_hub folder sits in your Dropbox
 const APP_KEY = "";
-const VERSION = "1.1";            // optional: your Dropbox app key (otherwise the app asks for it once)
+const VERSION = "1.2";            // optional: your Dropbox app key (otherwise the app asks for it once)
 
 // ---------- small helpers ----------
 const $ = (s) => document.querySelector(s);
@@ -227,8 +227,39 @@ function signOut() {
 // Header values must be ASCII, so escape accents etc. in paths.
 const headerJson = (o) => JSON.stringify(o).replace(/[\u007f-\uffff]/g, c => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0"));
 
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+// Safari reports a dropped connection as "Load failed", Chrome as "Failed to fetch".
+const isNetworkError = (e) => e instanceof TypeError || /load failed|failed to fetch|networkerror|network connection/i.test(e.message || "");
+const NETWORK_MSG = "Couldn't reach Dropbox. Check your connection.";
+
+// At most 4 requests at a time: Safari queues the rest anyway, and Dropbox limits how fast apps may ask.
+let active = 0;
+const waiting = [];
+async function slot(fn) {
+  if (active >= 4) await new Promise(r => waiting.push(r));
+  active++;
+  try { return await fn(); } finally { active--; const next = waiting.shift(); if (next) next(); }
+}
+
 async function dbx(url, opts = {}, retry = true) {
-  const r = await fetch(url, { method: "POST", ...opts, headers: { ...opts.headers, Authorization: `Bearer ${await accessToken()}` } });
+  // Try up to 4 times when the connection drops or Dropbox asks us to slow down / is briefly unavailable.
+  let r;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const token = await accessToken();
+      r = await slot(() => fetch(url, { method: "POST", ...opts, headers: { ...opts.headers, Authorization: `Bearer ${token}` } }));
+    } catch (e) {
+      if (e.signedOut || !isNetworkError(e) || attempt >= 3) throw e;
+      await sleep(600 * 2 ** attempt);
+      continue;
+    }
+    if ((r.status === 429 || r.status >= 500) && attempt < 3) {
+      const wait = +r.headers.get("Retry-After") || 0;
+      await sleep(Math.max(wait * 1000, 800 * 2 ** attempt));
+      continue;
+    }
+    break;
+  }
   if (r.status === 401 && retry) { store.del("rh-access"); return dbx(url, opts, false); }
   if (!r.ok) {
     const text = await r.text().catch(() => "");
@@ -242,8 +273,8 @@ const rpc = async (endpoint, args) => (await dbx(`https://api.dropboxapi.com/2/$
 })).json();
 const notFound = (e) => e.status === 409 && /not_found/.test(e.summary);
 
-async function listFolder(path) {
-  let res = await rpc("files/list_folder", { path, limit: 2000 });
+async function listFolder(path, recursive = false) {
+  let res = await rpc("files/list_folder", { path, recursive, limit: 2000 });
   const entries = [...res.entries];
   while (res.has_more) { res = await rpc("files/list_folder/continue", { cursor: res.cursor }); entries.push(...res.entries); }
   return entries;
@@ -251,9 +282,6 @@ async function listFolder(path) {
 async function download(path) {
   const r = await dbx("https://content.dropboxapi.com/2/files/download", { headers: { "Dropbox-API-Arg": headerJson({ path }) } });
   return r.text();
-}
-async function downloadOr(path, fallback) {
-  try { return await download(path); } catch (e) { if (notFound(e)) return fallback; throw e; }
 }
 async function upload(path, text, rev) {
   const mode = rev ? { ".tag": "update", update: rev } : { ".tag": "add" };  // refuse to overwrite edits made elsewhere
@@ -316,16 +344,26 @@ const activeReports = (p) => p.reports.filter(r => !isArchived(p, r));
 const openCount = (p) => p.tasks.filter(t => !t.done && !t.archived).length;
 const unreadCount = (p) => activeReports(p).filter(r => !isRead(p, r)).length;
 
-async function reportsDirOf(name, entries) {
-  // REPORTS.txt (first line = folder inside Dropbox) wins; otherwise the project's own "reports" folder.
-  const pointer = entries.some(e => e.name === "REPORTS.txt")
-    ? (await downloadOr(`${projectPath(name)}/REPORTS.txt`, "")).trim().split(/\r?\n/)[0].trim() : "";
-  return pointer ? "/" + pointer.replace(/^\/+/, "") : `${projectPath(name)}/reports`;
+// Small files (tasks, marks, REPORTS.txt) are kept on the phone with their Dropbox version ("rev"),
+// and only downloaded again when that version changes. Most refreshes download nothing.
+const fileCache = store.json("rh-files") || {};
+const saveFileCache = () => store.set("rh-files", JSON.stringify(fileCache));
+async function cachedText(entry) {
+  const c = fileCache[entry.path_lower];
+  if (c && c.rev === entry.rev) return c.text;
+  const text = await download(entry.path_lower);
+  fileCache[entry.path_lower] = { rev: entry.rev, text };
+  saveFileCache();
+  return text;
 }
 
 async function listReports(dir) {
   let entries;
   try { entries = await listFolder(dir); } catch (e) { if (notFound(e)) return []; throw e; }
+  return toReports(entries);
+}
+
+function toReports(entries) {
   return entries
     .filter(e => e[".tag"] === "file" && !e.name.startsWith("."))
     .map(e => {
@@ -335,30 +373,47 @@ async function listReports(dir) {
     .sort(newestFirst);
 }
 
-async function loadProject(name) {
-  const entries = await listFolder(projectPath(name));
+// Build a project from the listing of its folder. ownReports: listing of its "reports" folder, if known.
+async function buildProject(name, entries, ownReports) {
   const file = (n) => entries.find(e => e[".tag"] === "file" && e.name === n);
-  const tasksFile = file("TASKS.md"), readFile = file(READ_FILE), archiveFile = file(ARCHIVE_FILE);
-  const [text, readText, archiveText, reports] = await Promise.all([
-    tasksFile ? download(tasksFile.path_lower) : "",
-    readFile ? download(readFile.path_lower) : "",
-    archiveFile ? download(archiveFile.path_lower) : "",
-    reportsDirOf(name, entries).then(listReports),
-  ]);
+  const tasksFile = file("TASKS.md"), readFile = file(READ_FILE), archiveFile = file(ARCHIVE_FILE), pointerFile = file("REPORTS.txt");
+  const [text, readText, archiveText, pointerText] = await Promise.all(
+    [tasksFile, readFile, archiveFile, pointerFile].map(f => f ? cachedText(f) : ""));
+  // REPORTS.txt (first line = folder inside Dropbox) wins; otherwise the project's own "reports" folder.
+  const pointer = pointerText.trim().split(/\r?\n/)[0].trim();
+  const reports = pointer ? await listReports("/" + pointer.replace(/^\/+/, ""))
+    : ownReports ? toReports(ownReports) : await listReports(`${projectPath(name)}/reports`);
   return {
-    name, reports,
+    name, reports, loadedAt: Date.now(),
     tasks: parseTasks(text), rev: tasksFile ? tasksFile.rev : null,
     read: parseNames(readText), readRev: readFile ? readFile.rev : null,
     archivedReports: parseNames(archiveText), archiveRev: archiveFile ? archiveFile.rev : null,
   };
 }
 
+async function loadProject(name) {
+  return buildProject(name, await listFolder(projectPath(name)));
+}
+
 async function loadAll() {
+  // One listing of the whole projects folder (with every project's files), instead of one per project.
+  const root = `${HUB}/projects`.toLowerCase();
   let entries;
-  try { entries = await listFolder(`${HUB}/projects`); }
+  try { entries = await listFolder(`${HUB}/projects`, true); }
   catch (e) { if (notFound(e)) throw new Error(`Couldn't find ${HUB}/projects in your Dropbox.`); throw e; }
-  const names = entries.filter(e => e[".tag"] === "folder" && !e.name.startsWith(".")).map(e => e.name).sort(byName);
-  return pool(names, 6, loadProject);
+  const depth = (e) => e.path_lower.slice(root.length + 1).split("/").length;
+  const names = entries.filter(e => e[".tag"] === "folder" && depth(e) === 1 && !e.name.startsWith(".")).map(e => e.name).sort(byName);
+  const projects = await pool(names, 3, (name) => {
+    const dir = `${root}/${name.toLowerCase()}/`;
+    const inside = entries.filter(e => e.path_lower.startsWith(dir));
+    const own = inside.filter(e => e.path_lower.startsWith(dir + "reports/") && depth(e) === 3);
+    return buildProject(name, inside.filter(e => depth(e) === 2), own);
+  });
+  // Forget saved files that no longer exist.
+  const seen = new Set(entries.map(e => e.path_lower));
+  for (const k of Object.keys(fileCache)) if (k.startsWith(root + "/") && !seen.has(k)) delete fileCache[k];
+  saveFileCache();
+  return projects;
 }
 
 // ---------- app state + routing ----------
@@ -370,7 +425,10 @@ const state = {
   filter: "",
   unreadOnly: false,
   busy: 0,
+  lastRefresh: 0,       // when all projects were last loaded from Dropbox
+  openingFile: 0,       // when a PDF was last opened (iOS drops requests while it opens)
 };
+const FRESH_MS = 60000;  // reuse data younger than this when switching views or coming back to the app
 let saving = Promise.resolve();
 
 const saveCache = () => store.set("rh-all", JSON.stringify(state.projects || []));
@@ -382,22 +440,34 @@ function putProject(p) {
   saveCache();
 }
 
-function route() {
+function route(force) {
   const h = location.hash;
   if (!appKey() || (!store.get("rh-refresh") && !store.get("rh-access"))) return showSetup();
-  if (h.startsWith("#/p/")) return showProject(decodeURIComponent(h.slice(4)));
-  if (h === "#/recent") return showRecent();
-  return showHome();
+  if (h.startsWith("#/p/")) return showProject(decodeURIComponent(h.slice(4)), force);
+  if (h === "#/recent") return showRecent(force);
+  return showHome(force);
 }
-window.addEventListener("hashchange", route);
-document.addEventListener("visibilitychange", () => { if (!document.hidden && appKey() && store.get("rh-refresh")) route(); });
+window.addEventListener("hashchange", () => route());
+// Coming back to the app: wait a moment for the connection to return, then refresh if the data is old.
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden || !appKey() || !store.get("rh-refresh")) return;
+  setTimeout(() => { if (!document.hidden) route(); }, 800);
+});
 
-async function busy(fn) {
+let lastNetworkNote = 0;
+async function busy(fn, { quiet = false } = {}) {
   state.busy++; $("#refresh")?.classList.add("spin");
   try { return await fn(); }
   catch (e) {
     if (e.signedOut) { signOut(); showSetup("Your Dropbox connection expired. Please connect again."); }
-    else toast(e.message === "Failed to fetch" ? "Couldn't reach Dropbox. Check your connection." : e.message);
+    else if (isNetworkError(e)) {
+      // Requests cut off by leaving the app or opening a PDF aren't worth a message.
+      if (document.hidden || Date.now() - state.openingFile < 5000) return;
+      if (quiet) {
+        if (Date.now() - lastNetworkNote > 60000) { lastNetworkNote = Date.now(); toast("Couldn't refresh. Showing your saved copy."); }
+      } else toast(NETWORK_MSG);
+    }
+    else toast(e.message);
   }
   finally { if (--state.busy === 0) $("#refresh")?.classList.remove("spin"); }
 }
@@ -413,24 +483,26 @@ function header({ title, back, tabs }) {
       <a href="#/" ${tabs === "home" ? 'aria-current="page"' : ""}>Projects</a>
       <a href="#/recent" ${tabs === "recent" ? 'aria-current="page"' : ""}>Recent PDFs</a>
     </nav>` : ""}`;
-  $("#refresh").onclick = () => route();
+  $("#refresh").onclick = () => route(true);
 }
 
-function refreshAll(view, render) {
+function refreshAll(view, render, force) {
+  if (!force && state.projects && Date.now() - state.lastRefresh < FRESH_MS) return;
   busy(async () => {
     state.projects = await loadAll();
+    state.lastRefresh = Date.now();
     saveCache();
     if (currentView() === view) render(true);
-  });
+  }, { quiet: !!state.projects });
 }
 const currentView = () => location.hash.startsWith("#/p/") ? "project" : location.hash === "#/recent" ? "recent" : "home";
 
 // ---------- views ----------
-function showHome() {
+function showHome(force) {
   document.title = "Research Hub";
   header({ title: "Research Hub", tabs: "home" });
   renderHome();
-  refreshAll("home", renderHome);
+  refreshAll("home", renderHome, force);
 }
 
 function renderHome() {
@@ -453,18 +525,21 @@ function renderHome() {
   if (so) so.onclick = () => { if (confirm("Disconnect this phone from your Dropbox?")) { signOut(); showSetup(); } };
 }
 
-function showProject(name) {
+function showProject(name, force) {
   document.title = name;
   header({ title: name, back: true });
-  state.project = findProject(name) || null;
+  const known = findProject(name);
+  state.project = known || null;
   renderProject(name);
+  // Just loaded (e.g. from the project list a moment ago)? Then there's nothing new to fetch.
+  if (!force && known && !known.fromCache && !known.failed && Date.now() - (known.loadedAt || 0) < FRESH_MS) return;
   busy(async () => {
     const p = await loadProject(name);
     putProject(p);
     if (location.hash !== "#/p/" + encodeURIComponent(name)) return;
     state.project = p;
     renderProject(name);
-  });
+  }, { quiet: !!known });
 }
 
 function renderProject(name) {
@@ -548,13 +623,18 @@ function persist(p, fileName, text, revKey) {
   saving = saving.then(() => busy(async () => {
     if (p.failed) return;
     try {
-      const meta = await upload(`${projectPath(p.name)}/${fileName}`, text, p[revKey]);
+      const path = `${projectPath(p.name)}/${fileName}`;
+      const meta = await upload(path, text, p[revKey]);
       p[revKey] = meta.rev;
+      fileCache[path.toLowerCase()] = { rev: meta.rev, text };  // no need to download our own change again
+      saveFileCache();
       saveCache();
     } catch (e) {
       p.failed = true;
-      toast(e.status === 409 ? "This was changed on another device. Reloaded, please try again." : "Couldn't save: " + e.message);
-      route();
+      toast(e.status === 409 ? "This was changed on another device. Reloaded, please try again."
+        : isNetworkError(e) ? "Couldn't save: no connection to Dropbox. Please try again."
+        : "Couldn't save: " + e.message);
+      route(true);  // show what's really saved in Dropbox
     }
   }));
 }
@@ -588,11 +668,11 @@ function setMark(p, key, names, value) {
 }
 const setRead = (p, names, value) => setMark(p, "read", names, value);
 
-function showRecent() {
+function showRecent(force) {
   document.title = "Recent PDFs";
   header({ title: "Research Hub", tabs: "recent" });
   renderRecent();
-  refreshAll("recent", renderRecent);
+  refreshAll("recent", renderRecent, force);
 }
 
 function renderRecent(listOnly) {
@@ -674,7 +754,7 @@ function showSetup(message) {
       const why = /verifier|expired|doesn't exist|does not exist|invalid_grant/i.test(err.message)
         ? "That code didn't work (it may be from an older Dropbox page, or already used)."
         : /client|app key|invalid_client/i.test(err.message) ? "Dropbox didn't accept the app key. Check it via “Use a different app key” below."
-        : err.message === "Failed to fetch" ? "Couldn't reach Dropbox. Check your connection." : err.message;
+        : isNetworkError(err) ? NETWORK_MSG : err.message;
       showSetup(why + " Tap Open Dropbox again, then paste the new code it shows.");
     }
   };
@@ -689,6 +769,7 @@ document.addEventListener("click", async (e) => {
     // In the home-screen app, open the PDF in the in-app browser (tap Done to come back).
     const standalone = navigator.standalone || matchMedia("(display-mode: standalone)").matches;
     const win = standalone ? null : window.open("", "_blank");
+    state.openingFile = Date.now();
     await busy(async () => {
       try {
         const { link } = await rpc("files/get_temporary_link", { path: openBtn.dataset.open });

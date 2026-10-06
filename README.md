@@ -1,4 +1,4 @@
-# Research Hub v1.1
+# Research Hub v1.2
 
 Research Hub keeps the tasks and reports for all your research projects in one place, on your computer and your phone.
 
@@ -154,5 +154,6 @@ Open it from your phone's Downloads, or tell whoever shared the app with you.
 
 ## Versions
 
+- **v1.2** (October 2026): faster, more reliable phone app. It loads only what changed, retries dropped connections, and no longer shows "Load failed" for brief network hiccups.
 - **v1.1** (September 2026): rename projects; renumber projects when numbers have gaps.
 - **v1.0** (September 2026): first release. Tasks, reports, read marks and archive on computer and phone; add and remove projects from the computer app.
