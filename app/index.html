@@ -402,7 +402,8 @@ async function loadAll() {
   try { entries = await listFolder(`${HUB}/projects`, true); }
   catch (e) { if (notFound(e)) throw new Error(`Couldn't find ${HUB}/projects in your Dropbox.`); throw e; }
   const depth = (e) => e.path_lower.slice(root.length + 1).split("/").length;
-  const names = entries.filter(e => e[".tag"] === "folder" && depth(e) === 1 && !e.name.startsWith(".")).map(e => e.name).sort(byName);
+  // The listing also includes the projects folder itself; skip it.
+  const names = entries.filter(e => e[".tag"] === "folder" && e.path_lower.startsWith(root + "/") && depth(e) === 1 && !e.name.startsWith(".")).map(e => e.name).sort(byName);
   const projects = await pool(names, 3, (name) => {
     const dir = `${root}/${name.toLowerCase()}/`;
     const inside = entries.filter(e => e.path_lower.startsWith(dir));
