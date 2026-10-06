@@ -4,6 +4,8 @@ Research Hub keeps the tasks and reports for all your research projects in one p
 
 It doesn't have its own server or account. Everything is saved as plain files in **your own Dropbox**, and the apps simply read and write those files. Nothing is sent anywhere else.
 
+**Website:** [hpellegrina.github.io/research-hub](https://hpellegrina.github.io/research-hub/). Download it for your computer there, and open the phone app at [hpellegrina.github.io/research-hub/app](https://hpellegrina.github.io/research-hub/app/).
+
 ---
 
 ## What you can do
@@ -47,7 +49,7 @@ Dropbox/
 
 ## Setting up on your computer (about 5 minutes)
 
-1. **Download** the zip from the Research Hub website (the link you were given) and double-click it to unzip. You get a folder called `research_hub`.
+1. **Download** the zip from [hpellegrina.github.io/research-hub](https://hpellegrina.github.io/research-hub/) (the **Download for Mac or Windows** button) and double-click it to unzip. You get a folder called `research_hub`.
 2. **Move it to the top level of your Dropbox**, so it's `Dropbox/research_hub`. The phone app looks for it exactly there.
 3. **Open the hub:**
    - **Mac:** open `research_hub/tracker` and double-click **Research Hub**. You can drag it to your Dock for one-click access.
@@ -61,7 +63,7 @@ Dropbox/
 
 ## Setting up on your phone (about 5 minutes)
 
-1. **Open the app:** on your phone, open the Research Hub website and tap **Open the phone app**.
+1. **Open the app:** on your phone, go to [hpellegrina.github.io/research-hub/app](https://hpellegrina.github.io/research-hub/app/). You can also open [the website](https://hpellegrina.github.io/research-hub/) and tap **Open the phone app**.
 2. **Add it to your home screen:**
    - **iPhone:** in **Safari**, tap Share › **Add to Home Screen**.
    - **Android:** in **Chrome**, tap ⋮ › **Add to Home screen**.
